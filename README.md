@@ -2,11 +2,6 @@
 
 [![Abrir en GitHub Codespaces](https://github.com/codespaces/badge.svg)](https://codespaces.new/Yarlett22/agromarket?quickstart=1)
 
-> **Probar sin instalar nada:** clic en el botón de arriba → *Create codespace*. En 3–5 min se levantan los 12 contenedores y se abre la app automáticamente (puerto 8080).
-
-**Plataforma de pedidos de productos agroexportables del Perú** construida con una arquitectura Full Stack **distribuida y orientada a eventos**:
-
-```
 Frontend → API Gateway → Backend → Event Bus → Event Consumers → Datos
 ```
 

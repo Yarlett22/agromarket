@@ -52,8 +52,8 @@ jobs:
         if: github.ref == 'refs/heads/main' && github.event_name == 'push'
         run: |
           mkdir -p docs/screenshots && cp shots/*.png docs/screenshots/
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git config user.name "Yarlett Huaman"
+          git config user.email "yarlett.huaman.b@uni.pe"
           git add docs/screenshots
           git diff --cached --quiet || (git commit -m "docs: capturas de la demo [skip ci]" && git push)
       - name: Logs de los servicios

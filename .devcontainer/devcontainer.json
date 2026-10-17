@@ -1,0 +1,14 @@
+{
+  "name": "AgroMarket",
+  "image": "mcr.microsoft.com/devcontainers/base:ubuntu",
+  "features": {
+    "ghcr.io/devcontainers/features/docker-in-docker:2": {}
+  },
+  "hostRequirements": { "cpus": 4, "memory": "8gb" },
+  "forwardPorts": [8080, 8222],
+  "portsAttributes": {
+    "8080": { "label": "AgroMarket (app)", "onAutoForward": "openBrowser" },
+    "8222": { "label": "NATS monitor", "onAutoForward": "silent" }
+  },
+  "postStartCommand": "docker compose up -d --build"
+}

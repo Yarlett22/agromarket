@@ -16,6 +16,16 @@ Frontend → API Gateway → Backend → Event Bus → Event Consumers → Datos
 | **Datos** | **PostgreSQL** + **Redis** | Un **esquema por servicio** (`users`, `catalog`, `orders`, `payments`, `inventory`) → *data ownership*. Redis: caché del catálogo, notificaciones y métricas. |
 | **Plataforma** | Docker Compose · GitHub Actions | 12 contenedores con un solo comando; CI que compila backend y frontend. |
 
+## 📸 Capturas
+
+> Generadas automáticamente por el pipeline de CI (Playwright), que levanta toda la arquitectura en Docker.
+
+| Catálogo | Pedido procesándose (asíncrono) |
+|---|---|
+| ![Catálogo](docs/screenshots/1-catalogo.png) | ![Pedido](docs/screenshots/4-pedido-procesando.png) |
+| **Pedido confirmado** | **Arquitectura en vivo** |
+| ![Confirmado](docs/screenshots/5-pedido-confirmado.png) | ![Arquitectura](docs/screenshots/6-arquitectura.png) |
+
 ---
 
 ## 🏗️ Arquitectura
@@ -119,6 +129,12 @@ Abre **http://localhost:8080**. La primera compilación tarda unos minutos.
 | http://localhost:8080/api/catalog/products | API del catálogo |
 | http://localhost:8080/api/analytics | Métricas del Analytics Service |
 | http://localhost:8222 | Monitor del Event Bus (NATS) |
+
+Para verificar toda la arquitectura automáticamente (en otra terminal):
+
+```bash
+./scripts/smoke-test.sh
+```
 
 Para ver los eventos en la terminal:
 

@@ -205,8 +205,12 @@ main { flex: 1; width: 100%; max-width: 1200px; margin: 0 auto; padding: 24px 16
 
 @media (max-width: 860px) {
   .topbar { flex-wrap: wrap; gap: 10px; padding: 10px 16px; }
-  .topbar nav { order: 3; width: 100%; overflow-x: auto; }
-  .actions { margin-left: auto; }
+  .brand small { display: none; }
+  .brand img { width: 32px; height: 32px; }
+  .topbar nav { order: 3; flex-basis: 100%; overflow-x: auto; }
+  .topbar nav button { white-space: nowrap; padding: 6px 12px; }
+  .actions { margin-left: auto; gap: 8px; }
+  .actions .btn { padding: 8px 12px; font-size: 14px; }
   .user span { display: none; }
   .hero { grid-template-columns: 1fr; padding: 22px; }
   .stepper { grid-template-columns: 1fr; }

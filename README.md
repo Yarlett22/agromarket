@@ -111,56 +111,7 @@ sequenceDiagram
 
 ---
 
-## 🚀 Cómo ejecutarlo
 
-**Requisito:** Docker Desktop.
-
-```bash
-git clone https://github.com/Yarlett22/agromarket.git
-cd agromarket
-docker compose up --build
-```
-
-Abre **http://localhost:8080**. La primera compilación tarda unos minutos.
-
-| URL | Qué es |
-|---|---|
-| http://localhost:8080 | App web (a través del API Gateway) |
-| http://localhost:8080/api/catalog/products | API del catálogo |
-| http://localhost:8080/api/analytics | Métricas del Analytics Service |
-| http://localhost:8222 | Monitor del Event Bus (NATS) |
-
-Para verificar toda la arquitectura automáticamente (en otra terminal):
-
-```bash
-./scripts/smoke-test.sh
-```
-
-Para ver los eventos en la terminal:
-
-```bash
-docker compose logs -f order-service payment-service inventory-service notification-service
-```
-
----
-
-## 🎬 Guion de demo (3 minutos)
-
-1. **Registrarse** en la app. El token JWT lo emite el User Service.
-2. **Catálogo:** agregar Palta Hass y Arándanos al carrito. El catálogo viene de Redis (cabecera `X-Cache: HIT`).
-3. **Confirmar pedido.** En *Mis pedidos* se ve en vivo: `PENDIENTE` → `PAGADO` (Payment) → `CONFIRMADO` (Inventory). El stock del catálogo baja solo.
-4. **Pedido rechazado:** agregar 20 sacos de café (S/ 6,400). El Payment Service publica `PaymentFailed` y el pedido queda `RECHAZADO`.
-5. **Pestaña Arquitectura:** las capas, los KPIs del Analytics Service y el flujo de eventos del usuario.
-6. **Gateway:**
-   - `curl -i localhost:8080/api/orders` sin token → **401**
-   - Ráfaga de logins → **429** (rate limiting):
-     ```bash
-     for i in $(seq 1 30); do curl -s -o /dev/null -w "%{http_code} " -X POST localhost:8080/api/users/login -d '{}'; done
-     ```
-7. **Desacoplamiento:** `docker compose stop notification-service`. Los pedidos siguen funcionando; solo dejan de llegar notificaciones.
-8. **PWA:** en Chrome, *Instalar app*. El catálogo sigue visible sin conexión.
-
----
 
 ## 📁 Estructura
 
@@ -200,10 +151,3 @@ agromarket/
 - **Data ownership:** cada servicio usa su propio esquema. El Catalog Service no lee la tabla del Inventory, sino que mantiene su copia del stock **consumiendo `StockUpdated`** (consistencia eventual).
 - **Respuesta `202 Accepted`:** el pedido se acepta al instante y el resto se procesa de forma asíncrona. El frontend consulta el estado periódicamente.
 
-## 🔮 Trabajo futuro
-
-Kubernetes (manifiestos/Helm), cliente React Native, NATS JetStream para entrega garantizada, OpenTelemetry + Prometheus + Grafana, pasarela de pago real y despliegue en la nube.
-
----
-
-Proyecto del curso de **Desarrollo Web — UNI FIEE**, desarrollado con asistencia de IA (Claude).

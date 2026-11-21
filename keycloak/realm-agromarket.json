@@ -1,0 +1,95 @@
+{
+  "realm": "agromarket",
+  "displayName": "AgroMarket",
+  "enabled": true,
+  "sslRequired": "external",
+  "registrationAllowed": true,
+  "registrationEmailAsUsername": false,
+  "loginWithEmailAllowed": true,
+  "resetPasswordAllowed": false,
+  "rememberMe": true,
+  "bruteForceProtected": true,
+  "failureFactor": 5,
+  "accessTokenLifespan": 300,
+  "ssoSessionIdleTimeout": 1800,
+  "defaultSignatureAlgorithm": "RS256",
+  "internationalizationEnabled": true,
+  "supportedLocales": [
+    "es",
+    "en"
+  ],
+  "defaultLocale": "es",
+  "roles": {
+    "realm": [
+      {
+        "name": "cliente",
+        "description": "Exportador que realiza pedidos"
+      },
+      {
+        "name": "admin",
+        "description": "Administrador de AgroMarket"
+      }
+    ]
+  },
+  "clients": [
+    {
+      "clientId": "agromarket-web",
+      "name": "AgroMarket Web (React PWA)",
+      "enabled": true,
+      "publicClient": true,
+      "protocol": "openid-connect",
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": true,
+      "implicitFlowEnabled": false,
+      "redirectUris": [
+        "/*"
+      ],
+      "webOrigins": [
+        "+"
+      ],
+      "attributes": {
+        "pkce.code.challenge.method": "S256",
+        "post.logout.redirect.uris": "/*"
+      }
+    }
+  ],
+  "users": [
+    {
+      "username": "demo",
+      "email": "demo@agromarket.pe",
+      "firstName": "Exportadora",
+      "lastName": "Demo SAC",
+      "enabled": true,
+      "emailVerified": true,
+      "credentials": [
+        {
+          "type": "password",
+          "value": "demo1234",
+          "temporary": false
+        }
+      ],
+      "realmRoles": [
+        "cliente"
+      ]
+    },
+    {
+      "username": "profesor",
+      "email": "profesor@agromarket.pe",
+      "firstName": "Profesor",
+      "lastName": "UNI",
+      "enabled": true,
+      "emailVerified": true,
+      "credentials": [
+        {
+          "type": "password",
+          "value": "profesor123",
+          "temporary": false
+        }
+      ],
+      "realmRoles": [
+        "cliente",
+        "admin"
+      ]
+    }
+  ]
+}

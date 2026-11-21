@@ -1,39 +1,94 @@
-# AgroMarket — Arquitectura Full Stack distribuida y orientada a eventos
-# Frontend → API Gateway → Backend → Event Bus → Event Consumers → Datos
+# AgroMarket — Arquitectura Full Stack distribuida, orientada a eventos y segura
 #
-#   docker compose up --build      →  http://localhost:8080
+#   React ─TLS─► WAF (ModSecurity + OWASP CRS) ─► NGINX Gateway ─► Go ─TLS─► NATS ─TLS─► Go consumers ─TLS─► PostgreSQL
+#            └──► Keycloak (OIDC, tokens JWT RS256) ◄── validados por el Gateway/User Service con JWKS
+#
+#   docker compose up --build      →  https://localhost:8443   (http://localhost:8080 redirige a HTTPS)
+#   Usuario demo: demo / demo1234  ·  Consola Keycloak: https://localhost:8443/auth/admin  (admin / admin)
 
 x-go-service: &go-service
   restart: unless-stopped
   environment: &go-env
-    DATABASE_URL: postgres://agro:agro@postgres:5432/agromarket?sslmode=disable
+    # TLS hacia PostgreSQL verificando el certificado y el nombre del servidor
+    DATABASE_URL: postgres://agro:agro@postgres:5432/agromarket?sslmode=verify-full&sslrootcert=/certs/ca.crt
     REDIS_ADDR: redis:6379
-    NATS_URL: nats://nats:4222
-    JWT_SECRET: ${JWT_SECRET:-agromarket-dev-secret}
+    # TLS hacia el Event Bus
+    NATS_URL: tls://nats:4222
+    NATS_CA: /certs/ca.crt
+  volumes:
+    - certs:/certs:ro
   depends_on:
+    certs: { condition: service_completed_successfully }
     postgres: { condition: service_healthy }
     redis: { condition: service_started }
     nats: { condition: service_started }
 
 services:
+  # ===================== SEGURIDAD: CA interna + certificados TLS =====================
+  certs:
+    image: alpine:3.20
+    command: ["sh", "/gen-certs.sh"]
+    volumes:
+      - certs:/certs
+      - ./scripts/gen-certs.sh:/gen-certs.sh:ro
+
+  # ===================== IDENTIDAD: Keycloak (OIDC / OAuth2, JWT RS256) =====================
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.0.7
+    command: ["start-dev", "--import-realm"]
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: admin
+      KC_BOOTSTRAP_ADMIN_PASSWORD: admin
+      KC_HTTP_RELATIVE_PATH: /auth          # se publica detrás del gateway en https://.../auth
+      KC_PROXY_HEADERS: xforwarded          # confía en X-Forwarded-* del gateway (TLS termina en el WAF)
+      KC_HOSTNAME_STRICT: "false"
+      KC_HEALTH_ENABLED: "true"
+    volumes:
+      - ./keycloak/realm-agromarket.json:/opt/keycloak/data/import/realm-agromarket.json:ro
+    healthcheck:
+      test: ["CMD-SHELL", "exec 3<>/dev/tcp/localhost/9000 && printf 'GET /auth/health/ready HTTP/1.1\\r\\nHost: localhost\\r\\nConnection: close\\r\\n\\r\\n' >&3 && grep -q UP <&3"]
+      interval: 5s
+      retries: 40
+    restart: unless-stopped
+
   # ===================== FRONTEND =====================
   web:
     build: ./frontend
     restart: unless-stopped
 
-  # ===================== API GATEWAY =====================
+  # ===================== API GATEWAY + WAF + TLS =====================
   gateway:
-    image: nginx:1.27-alpine
-    ports: ["8080:80"]
+    image: owasp/modsecurity-crs:nginx-alpine   # NGINX + ModSecurity v3 + OWASP Core Rule Set
+    ports: ["8080:8080", "8443:8443"]
+    environment:
+      MODSEC_RULE_ENGINE: "On"                 # On = bloquea · DetectionOnly = solo registra
+      BLOCKING_PARANOIA: "1"
+      ANOMALY_INBOUND: "5"
+      ANOMALY_OUTBOUND: "4"
+      ALLOWED_METHODS: "GET HEAD POST OPTIONS PUT PATCH DELETE"
+      MODSEC_AUDIT_ENGINE: "RelevantOnly"      # registra en el log solo las peticiones sospechosas
     volumes:
-      - ./gateway/nginx.conf:/etc/nginx/nginx.conf:ro
-    depends_on: [web, user-service, catalog-service, order-service, notification-service, analytics-service]
+      - ./gateway/nginx.conf.template:/etc/nginx/templates/nginx.conf.template:ro
+      - certs:/certs:ro
+    depends_on:
+      certs: { condition: service_completed_successfully }
+      web: { condition: service_started }
+      keycloak: { condition: service_started }
+      user-service: { condition: service_started }
+      catalog-service: { condition: service_started }
+      order-service: { condition: service_started }
+      notification-service: { condition: service_started }
+      analytics-service: { condition: service_started }
     restart: unless-stopped
 
   # ===================== BACKEND (Go) =====================
   user-service:
     <<: *go-service
     build: { context: ./services, args: { SERVICE: user } }
+    environment:
+      <<: *go-env
+      KEYCLOAK_REALM_URL: http://keycloak:8080/auth/realms/agromarket
+      KEYCLOAK_CLIENT_ID: agromarket-web
 
   catalog-service:
     <<: *go-service
@@ -67,23 +122,33 @@ services:
     <<: *go-service
     build: { context: ./services, args: { SERVICE: analytics } }
 
-  # ===================== EVENT BUS =====================
+  # ===================== EVENT BUS (NATS con TLS) =====================
   nats:
     image: nats:2.10-alpine
-    command: ["-m", "8222"]          # 8222 = monitoreo HTTP de NATS
-    ports: ["8222:8222"]
+    command: ["--tls", "--tlscert", "/certs/nats.crt", "--tlskey", "/certs/nats.key", "-m", "8222"]
+    ports: ["8222:8222"]                # 8222 = monitoreo HTTP de NATS
+    volumes:
+      - certs:/certs:ro
+    depends_on:
+      certs: { condition: service_completed_successfully }
     restart: unless-stopped
 
   # ===================== DATOS =====================
   postgres:
     image: postgres:16-alpine
+    command: ["postgres", "-c", "ssl=on", "-c", "ssl_cert_file=/certs/postgres.crt",
+              "-c", "ssl_key_file=/certs/postgres.key", "-c", "ssl_min_protocol_version=TLSv1.2"]
     environment:
       POSTGRES_USER: agro
       POSTGRES_PASSWORD: agro
       POSTGRES_DB: agromarket
     volumes:
+      - ./db/00-ssl.sh:/docker-entrypoint-initdb.d/00-ssl.sh:ro
       - ./db/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
-      - pgdata:/var/lib/postgresql/data
+      - pgdata-secure:/var/lib/postgresql/data
+      - certs:/certs:ro
+    depends_on:
+      certs: { condition: service_completed_successfully }
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U agro -d agromarket"]
       interval: 3s
@@ -95,4 +160,5 @@ services:
     restart: unless-stopped
 
 volumes:
-  pgdata:
+  pgdata-secure:
+  certs:

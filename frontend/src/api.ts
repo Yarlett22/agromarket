@@ -1,4 +1,5 @@
-// Cliente HTTP: todas las peticiones pasan por el API Gateway (/api/*) con JWT.
+// Cliente HTTP: todas las peticiones pasan por el API Gateway (/api/*) con el JWT de Keycloak.
+import { accessToken } from './auth';
 
 export interface Product {
   id: number;
@@ -58,25 +59,9 @@ export interface User {
   id: number | string;
   name: string;
   email: string;
+  username?: string;
+  roles?: string[];
 }
-
-const TOKEN_KEY = 'agromarket.token';
-const USER_KEY = 'agromarket.user';
-
-export const session = {
-  get token(): string | null {
-    try { return localStorage.getItem(TOKEN_KEY); } catch { return null; }
-  },
-  get user(): User | null {
-    try { const u = localStorage.getItem(USER_KEY); return u ? JSON.parse(u) : null; } catch { return null; }
-  },
-  save(token: string, user: User) {
-    try { localStorage.setItem(TOKEN_KEY, token); localStorage.setItem(USER_KEY, JSON.stringify(user)); } catch { /* noop */ }
-  },
-  clear() {
-    try { localStorage.removeItem(TOKEN_KEY); localStorage.removeItem(USER_KEY); } catch { /* noop */ }
-  },
-};
 
 export class ApiError extends Error {
   constructor(public status: number, message: string) { super(message); }
@@ -84,11 +69,12 @@ export class ApiError extends Error {
 
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-  const token = session.token;
+  const token = await accessToken(); // JWT RS256 emitido por Keycloak
   if (token) headers.Authorization = `Bearer ${token}`;
   const res = await fetch(`/api${path}`, { ...init, headers: { ...headers, ...(init.headers as object) } });
   const body = await res.json().catch(() => ({}));
   if (!res.ok) {
+    if (res.status === 403) throw new ApiError(403, body.error || 'Petición bloqueada por el WAF.');
     if (res.status === 429) throw new ApiError(429, 'Demasiadas solicitudes: el API Gateway aplicó rate limiting.');
     throw new ApiError(res.status, body.error || `Error ${res.status}`);
   }
@@ -96,10 +82,7 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
 }
 
 export const api = {
-  register: (name: string, email: string, password: string) =>
-    request<{ token: string; user: User }>('/users/register', { method: 'POST', body: JSON.stringify({ name, email, password }) }),
-  login: (email: string, password: string) =>
-    request<{ token: string; user: User }>('/users/login', { method: 'POST', body: JSON.stringify({ email, password }) }),
+  me: () => request<Record<string, unknown>>('/users/me'),
   products: () => request<Product[]>('/catalog/products'),
   createOrder: (items: { product_id: number; quantity: number }[]) =>
     request<{ id: number; status: string; total: number }>('/orders', { method: 'POST', body: JSON.stringify({ items }) }),

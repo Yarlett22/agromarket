@@ -8,12 +8,14 @@ CREATE SCHEMA IF NOT EXISTS payments;   -- Payment Service
 CREATE SCHEMA IF NOT EXISTS inventory;  -- Inventory Service
 
 -- ---------- User Service ----------
+-- La identidad (usuario/contraseña) vive en Keycloak; aquí solo el perfil local.
 CREATE TABLE users.accounts (
-  id            SERIAL PRIMARY KEY,
-  name          TEXT NOT NULL,
-  email         TEXT NOT NULL UNIQUE,
-  password_hash TEXT NOT NULL,
-  created_at    TIMESTAMPTZ NOT NULL DEFAULT now()
+  id          SERIAL PRIMARY KEY,
+  keycloak_id TEXT NOT NULL UNIQUE,   -- "sub" del token emitido por Keycloak
+  name        TEXT NOT NULL,
+  email       TEXT NOT NULL,
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+  last_login  TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
 -- ---------- Catalog Service ----------

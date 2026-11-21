@@ -1,23 +1,25 @@
-"""Captura pantallas de la demo (usado en CI): registro, compra y vistas principales."""
+"""Captura pantallas de la demo (usado en CI): login con Keycloak, compra, WAF y vistas principales."""
 import time
 from playwright.sync_api import sync_playwright
 
-GW = "http://localhost:8080"
+GW = "https://localhost:8443"
 
 with sync_playwright() as p:
     b = p.chromium.launch()
-    pg = b.new_page(viewport={"width": 1366, "height": 900})
+    ctx = b.new_context(viewport={"width": 1366, "height": 900}, ignore_https_errors=True)  # CA interna
+    pg = ctx.new_page()
     pg.goto(GW)
     pg.wait_for_selector(".card")
     pg.screenshot(path="shots/1-catalogo.png", full_page=True)
 
-    pg.click("text=Ingresar")
-    pg.fill("form.modal label:has-text('Nombre') input", "Exportadora Demo SAC")
-    pg.fill("input[type=email]", f"demo{int(time.time())}@agromarket.pe")
-    pg.fill("input[type=password]", "demo1234")
-    pg.screenshot(path="shots/2-registro.png")
-    pg.click("button:has-text('Registrarme')")
-    pg.wait_for_selector(".user")
+    # Login en Keycloak (Authorization Code + PKCE)
+    pg.click("header button:has-text('Ingresar')")
+    pg.wait_for_selector("#username", timeout=30000)
+    pg.fill("#username", "demo")
+    pg.fill("#password", "demo1234")
+    pg.screenshot(path="shots/2-login-keycloak.png")
+    pg.click("#kc-login")
+    pg.wait_for_selector(".user", timeout=30000)
 
     cards = pg.locator(".card")
     cards.nth(0).locator("button:has-text('Agregar')").click()
@@ -37,7 +39,13 @@ with sync_playwright() as p:
     time.sleep(2.5)
     pg.screenshot(path="shots/6-arquitectura.png", full_page=True)
 
-    m = b.new_page(viewport={"width": 390, "height": 844}, is_mobile=True)
+    # Ataque de inyección SQL bloqueado por el WAF
+    w = ctx.new_page()
+    w.set_viewport_size({"width": 1000, "height": 260})
+    w.goto(GW + "/api/catalog/products?q=1'%20OR%20'1'='1")
+    w.screenshot(path="shots/8-waf-bloqueo.png")
+
+    m = b.new_context(viewport={"width": 390, "height": 844}, is_mobile=True, ignore_https_errors=True).new_page()
     m.goto(GW)
     m.wait_for_selector(".card")
     m.screenshot(path="shots/7-movil.png")

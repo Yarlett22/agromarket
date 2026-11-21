@@ -36,9 +36,9 @@ jobs:
     permissions: { contents: write }
     steps:
       - uses: actions/checkout@v4
-      - name: Levantar los 12 contenedores
+      - name: Levantar la arquitectura (13 contenedores + generador de certificados)
         run: docker compose up -d --build
-      - name: Smoke test (Gateway → Go → NATS → consumers → Postgres/Redis)
+      - name: Smoke test seguro (TLS · WAF · Keycloak · eventos · Postgres/NATS con TLS)
         run: ./scripts/smoke-test.sh
       - name: Capturas de pantalla (Playwright)
         run: |

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Analytics, api, ApiError, money, Notification, Order, Product, session, User } from './api';
-import AuthModal from './components/AuthModal';
+import { Analytics, api, ApiError, money, Notification, Order, Product, User } from './api';
+import { login, logout as kcLogout, register } from './auth';
 import OrderCard from './components/OrderCard';
 import ArchitectureView from './components/ArchitectureView';
 
@@ -15,15 +15,14 @@ function usePolling(fn: () => void, ms: number, enabled = true) {
   }, [fn, ms, enabled]);
 }
 
-export default function App() {
-  const [user, setUser] = useState<User | null>(session.user);
+export default function App({ initialUser }: { initialUser: User | null }) {
+  const [user, setUser] = useState<User | null>(initialUser);
   const [tab, setTab] = useState<Tab>('catalogo');
   const [products, setProducts] = useState<Product[]>([]);
   const [cart, setCart] = useState<Record<number, number>>({});
   const [orders, setOrders] = useState<Order[]>([]);
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [analytics, setAnalytics] = useState<Analytics | null>(null);
-  const [showAuth, setShowAuth] = useState(false);
   const [showCart, setShowCart] = useState(false);
   const [toast, setToast] = useState<{ text: string; kind: string } | null>(null);
   const [placing, setPlacing] = useState(false);
@@ -43,7 +42,7 @@ export default function App() {
   }, []);
 
   const handleAuthError = (e: unknown) => {
-    if (e instanceof ApiError && e.status === 401) { session.clear(); setUser(null); }
+    if (e instanceof ApiError && e.status === 401) setUser(null); // sesión de Keycloak expirada
   };
 
   const loadProducts = useCallback(() => { api.products().then(setProducts).catch(() => undefined); }, []);
@@ -75,7 +74,7 @@ export default function App() {
     });
 
   const checkout = async () => {
-    if (!user) { setShowAuth(true); return; }
+    if (!user) { login(); return; }
     setPlacing(true);
     try {
       const res = await api.createOrder(cartLines.map((l) => ({ product_id: l.product.id, quantity: l.qty })));
@@ -92,7 +91,11 @@ export default function App() {
     }
   };
 
-  const logout = () => { session.clear(); setUser(null); setOrders([]); setNotifications([]); };
+  const logout = () => { setOrders([]); setNotifications([]); kcLogout(); };
+
+  useEffect(() => {
+    if (initialUser) notify(`Sesión iniciada con Keycloak: ${initialUser.name}`, 'success');
+  }, [initialUser]);
 
   return (
     <div className="app">
@@ -119,11 +122,14 @@ export default function App() {
           </button>
           {user ? (
             <div className="user">
-              <span>{user.name}</span>
+              <span title={`Autenticado con Keycloak · roles: ${(user.roles ?? []).join(', ')}`}>🔒 {user.name}</span>
               <button className="link" onClick={logout}>Salir</button>
             </div>
           ) : (
-            <button className="btn primary" onClick={() => setShowAuth(true)}>Ingresar</button>
+            <>
+              <button className="btn ghost" onClick={register}>Registrarse</button>
+              <button className="btn primary" onClick={login}>Ingresar</button>
+            </>
           )}
         </div>
       </header>
@@ -188,7 +194,7 @@ export default function App() {
             {!user && (
               <div className="empty">
                 <p>Inicia sesión para ver tus pedidos.</p>
-                <button className="btn primary" onClick={() => setShowAuth(true)}>Ingresar</button>
+                <button className="btn primary" onClick={login}>Ingresar con Keycloak</button>
               </div>
             )}
             {user && orders.length === 0 && (
@@ -243,17 +249,10 @@ export default function App() {
         </div>
       )}
 
-      {showAuth && (
-        <AuthModal
-          onClose={() => setShowAuth(false)}
-          onLogged={(u) => { setUser(u); setShowAuth(false); notify(`Bienvenido, ${u.name}`, 'success'); }}
-        />
-      )}
-
       {toast && <div className={`toast ${toast.kind}`}>{toast.text}</div>}
 
       <footer className="foot">
-        AgroMarket · React + Webpack 5 → NGINX → Go → NATS → Go consumers → PostgreSQL + Redis
+        AgroMarket · React + Webpack 5 → TLS → WAF + NGINX → Keycloak (JWT RS256) → Go → NATS (TLS) → Go consumers → PostgreSQL (TLS) + Redis
       </footer>
     </div>
   );

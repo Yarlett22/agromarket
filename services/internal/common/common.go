@@ -83,7 +83,7 @@ func MustPostgres() *sql.DB {
 		db, err = sql.Open("postgres", dsn)
 		if err == nil {
 			if err = db.Ping(); err == nil {
-				log.Println("✔ conectado a PostgreSQL")
+				log.Println("✔ conectado a PostgreSQL (sslmode según DATABASE_URL)")
 				return db
 			}
 		}
@@ -111,10 +111,15 @@ func MustRedis() *redis.Client {
 
 func MustNATS(name string) *nats.Conn {
 	url := Env("NATS_URL", nats.DefaultURL)
+	opts := []nats.Option{nats.Name(name), nats.MaxReconnects(-1)}
+	// TLS hacia el Event Bus: se verifica el certificado de NATS con la CA interna.
+	if ca := Env("NATS_CA", ""); ca != "" {
+		opts = append(opts, nats.RootCAs(ca))
+	}
 	for i := 0; i < 30; i++ {
-		nc, err := nats.Connect(url, nats.Name(name), nats.MaxReconnects(-1))
+		nc, err := nats.Connect(url, opts...)
 		if err == nil {
-			log.Println("✔ conectado a NATS (Event Bus)")
+			log.Printf("✔ conectado a NATS (Event Bus) — TLS: %v", nc.TLSRequired())
 			return nc
 		}
 		log.Printf("esperando NATS... (%v)", err)

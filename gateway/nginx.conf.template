@@ -1,0 +1,161 @@
+# API Gateway de AgroMarket: NGINX + WAF (ModSecurity v3 + OWASP Core Rule Set) + TLS
+# Imagen base: owasp/modsecurity-crs:nginx-alpine. Esta plantilla reemplaza la
+# configuración por defecto de la imagen (la procesa su entrypoint al arrancar).
+#
+# Cadena de seguridad:  Cliente ──TLS──► WAF (ModSecurity/CRS) ──► Gateway (JWT RS256 de Keycloak) ──► Servicios
+
+load_module modules/ngx_http_modsecurity_module.so;
+
+worker_processes auto;
+pid /tmp/nginx.pid;
+events { worker_connections 1024; }
+
+http {
+  include       /etc/nginx/mime.types;
+  default_type  application/octet-stream;
+  sendfile      on;
+  server_tokens off;
+
+  # ---------- WAF: ModSecurity + OWASP CRS (bloquea SQLi, XSS, RCE, escáneres...) ----------
+  include /etc/nginx/conf.d/modsecurity.conf;
+
+  # ---------- Logging (JSON) ----------
+  log_format gateway escape=json '{"time":"$time_iso8601","ip":"$remote_addr",'
+    '"method":"$request_method","uri":"$request_uri","status":$status,"tls":"$ssl_protocol",'
+    '"upstream":"$upstream_addr","req_time":$request_time,"user":"$auth_user_id"}';
+  access_log /dev/stdout gateway;
+  error_log  /dev/stderr warn;
+
+  # ---------- Rate limiting ----------
+  limit_req_zone $binary_remote_addr zone=api:10m  rate=20r/s;
+  limit_req_zone $binary_remote_addr zone=auth:10m rate=5r/s;
+  limit_req_zone $binary_remote_addr zone=kc:10m   rate=30r/s;
+  limit_req_status 429;
+
+  # ---------- Upstreams ----------
+  upstream user_service         { server user-service:8001; }
+  upstream catalog_service      { server catalog-service:8002; }
+  upstream order_service        { server order-service:8003; }
+  upstream notification_service { server notification-service:8004; }
+  upstream analytics_service    { server analytics-service:8005; }
+  upstream keycloak             { server keycloak:8080; }
+  upstream web                  { server web:80; }
+
+  # Host público (detrás de otro proxy, p. ej. Codespaces, se respeta X-Forwarded-Host)
+  map $http_x_forwarded_host $public_host { ""  $http_host;   default $http_x_forwarded_host; }
+  map $http_x_forwarded_host $public_port { ""  $server_port; default 443; }
+
+  # ---------- HTTP :8080 → redirección obligatoria a HTTPS ----------
+  server {
+    listen 8080;
+    server_name _;
+    location / { return 301 https://$host:8443$request_uri; }
+  }
+
+  # ---------- HTTPS :8443 (TLS 1.2 / 1.3) ----------
+  server {
+    listen 8443 ssl;
+    http2 on;
+    server_name _;
+
+    ssl_certificate     /certs/gateway.crt;
+    ssl_certificate_key /certs/gateway.key;
+    ssl_protocols       TLSv1.2 TLSv1.3;
+    ssl_ciphers         HIGH:!aNULL:!MD5;
+    ssl_prefer_server_ciphers on;
+    ssl_session_cache   shared:SSL:10m;
+
+    set $auth_user_id "-";
+
+    add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+    add_header X-Gateway "agromarket-nginx-waf" always;
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header X-Frame-Options "SAMEORIGIN" always;
+    add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+
+    # ---------- Keycloak (servidor de identidad) publicado en /auth ----------
+    location /auth/ {
+      limit_req zone=kc burst=100 nodelay;
+      proxy_pass http://keycloak;
+      proxy_set_header Host              $host;
+      proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+      proxy_set_header X-Forwarded-Proto https;
+      proxy_set_header X-Forwarded-Host  $public_host;
+      proxy_set_header X-Forwarded-Port  $public_port;
+      proxy_buffer_size       128k;
+      proxy_buffers           4 256k;
+      proxy_busy_buffers_size 256k;
+      add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+    }
+
+    # ---------- Validación del JWT (RS256 de Keycloak) en el User Service ----------
+    location = /_auth {
+      internal;
+      modsecurity off;
+      proxy_pass              http://user_service/auth/verify;
+      proxy_pass_request_body off;
+      proxy_set_header        Content-Length "";
+      proxy_set_header        Authorization $http_authorization;
+    }
+
+    # ---------- Rutas públicas ----------
+    location /api/catalog/ {
+      limit_req zone=api burst=40 nodelay;
+      proxy_pass http://catalog_service/;
+    }
+
+    location /api/analytics {
+      limit_req zone=api burst=40 nodelay;
+      proxy_pass http://analytics_service/analytics;
+    }
+
+    # ---------- Rutas protegidas (token de Keycloak obligatorio) ----------
+    location /api/users/ {
+      limit_req zone=auth burst=10 nodelay;
+      auth_request     /_auth;
+      auth_request_set $auth_user_id $upstream_http_x_user_id;
+      proxy_set_header X-User-Id $auth_user_id;
+      proxy_set_header Authorization $http_authorization;
+      proxy_pass http://user_service/;
+    }
+
+    location /api/orders {
+      limit_req zone=api burst=40 nodelay;
+      auth_request     /_auth;
+      auth_request_set $auth_user_id $upstream_http_x_user_id;
+      proxy_set_header X-User-Id $auth_user_id;
+      rewrite ^/api(/orders.*)$ $1 break;
+      proxy_pass http://order_service;
+    }
+
+    location /api/notifications {
+      limit_req zone=api burst=40 nodelay;
+      auth_request     /_auth;
+      auth_request_set $auth_user_id $upstream_http_x_user_id;
+      proxy_set_header X-User-Id $auth_user_id;
+      proxy_pass http://notification_service/notifications;
+    }
+
+    location = /api/health {
+      default_type application/json;
+      return 200 '{"gateway":"ok","tls":"$ssl_protocol","waf":"modsecurity+owasp-crs"}';
+    }
+
+    error_page 401 = @unauthorized;
+    location @unauthorized {
+      default_type application/json;
+      return 401 '{"error":"token ausente o inválido (inicia sesión con Keycloak)"}';
+    }
+
+    error_page 403 = @waf_blocked;
+    location @waf_blocked {
+      default_type application/json;
+      return 403 '{"error":"petición bloqueada por el WAF (ModSecurity + OWASP CRS)"}';
+    }
+
+    # ---------- Frontend (React + Webpack 5, PWA) ----------
+    location / {
+      proxy_pass http://web;
+    }
+  }
+}

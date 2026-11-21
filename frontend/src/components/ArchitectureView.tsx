@@ -7,12 +7,13 @@ interface Props {
 }
 
 const LAYERS = [
-  { name: 'Frontend', tech: 'React 18 · TypeScript · Webpack 5 · PWA', nodes: ['React Web', 'Service Worker', 'Manifest'] },
-  { name: 'API Gateway', tech: 'NGINX · JWT (auth_request) · Rate limiting · Logging', nodes: ['/api/users', '/api/catalog', '/api/orders', '/api/notifications'] },
-  { name: 'Backend', tech: 'Go 1.23 · REST', nodes: ['User Service', 'Catalog Service', 'Order Service'] },
-  { name: 'Event Bus', tech: 'NATS', nodes: ['orders.created', 'payments.completed', 'payments.failed', 'stock.updated'] },
+  { name: 'Frontend', tech: 'React 18 · TypeScript · Webpack 5 · PWA · keycloak-js (PKCE)', nodes: ['React Web', 'Service Worker', 'Manifest'] },
+  { name: 'Seguridad e identidad', tech: 'TLS 1.2/1.3 · WAF ModSecurity + OWASP CRS · Keycloak (OIDC, JWT RS256)', nodes: ['HTTPS :8443', 'WAF (SQLi / XSS / escáneres)', 'Keycloak /auth', 'JWKS'] },
+  { name: 'API Gateway', tech: 'NGINX · valida JWT RS256 (auth_request) · Rate limiting · Logging', nodes: ['/api/users', '/api/catalog', '/api/orders', '/api/notifications'] },
+  { name: 'Backend', tech: 'Go 1.23 · REST', nodes: ['User Service (JWKS)', 'Catalog Service', 'Order Service'] },
+  { name: 'Event Bus', tech: 'NATS con TLS (tls://nats:4222)', nodes: ['orders.created', 'payments.completed', 'payments.failed', 'stock.updated'] },
   { name: 'Event Consumers', tech: 'Go', nodes: ['Payment Service', 'Inventory Service', 'Notification Service', 'Analytics Service'] },
-  { name: 'Datos', tech: 'PostgreSQL (un esquema por servicio) · Redis', nodes: ['PostgreSQL', 'Redis cache', 'Redis notificaciones'] },
+  { name: 'Datos', tech: 'PostgreSQL con TLS (verify-full, un esquema por servicio) · Redis', nodes: ['PostgreSQL', 'Redis cache', 'Redis notificaciones'] },
 ];
 
 export default function ArchitectureView({ analytics, notifications }: Props) {
@@ -36,7 +37,7 @@ export default function ArchitectureView({ analytics, notifications }: Props) {
       <div className="arch-intro">
         <h1>Arquitectura en vivo</h1>
         <p className="muted">
-          Frontend → API Gateway → Backend → Event Bus → Event Consumers → Datos. Haz un pedido y observa cómo los
+          Frontend → TLS + WAF + Keycloak → API Gateway → Backend → Event Bus → Event Consumers → Datos. Haz un pedido y observa cómo los
           eventos atraviesan el sistema.
         </p>
       </div>

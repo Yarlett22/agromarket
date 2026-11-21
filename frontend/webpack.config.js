@@ -32,14 +32,14 @@ module.exports = (_env, argv) => {
     plugins: [
       new HtmlWebpackPlugin({ template: './public/index.html', favicon: './public/icons/favicon.png' }),
       new MiniCssExtractPlugin({ filename: 'css/[name].[contenthash:8].css' }),
-      new CopyWebpackPlugin({ patterns: [{ from: 'public/manifest.webmanifest' }, { from: 'public/icons', to: 'icons' }] }),
+      new CopyWebpackPlugin({ patterns: [{ from: 'public/manifest.webmanifest' }, { from: 'public/silent-check-sso.html' }, { from: 'public/icons', to: 'icons' }] }),
       // PWA: Service Worker generado con Workbox (solo en producción)
       ...(prod
         ? [new GenerateSW({
             clientsClaim: true,
             skipWaiting: true,
             navigateFallback: '/index.html',
-            navigateFallbackDenylist: [/^\/api\//],
+            navigateFallbackDenylist: [/^\/api\//, /^\/auth\//, /silent-check-sso/],
             runtimeCaching: [
               { urlPattern: /\/api\/catalog\//, handler: 'StaleWhileRevalidate', options: { cacheName: 'catalog-api' } },
             ],
@@ -50,7 +50,7 @@ module.exports = (_env, argv) => {
       port: 3000,
       historyApiFallback: true,
       hot: true,
-      proxy: [{ context: ['/api'], target: 'http://localhost:8080' }],
+      proxy: [{ context: ['/api', '/auth'], target: 'https://localhost:8443', secure: false }],
     },
     performance: { hints: false },
   };

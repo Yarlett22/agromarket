@@ -39,7 +39,18 @@ jobs:
       - name: Levantar la arquitectura (13 contenedores + generador de certificados)
         run: docker compose up -d --build
       - name: Smoke test seguro (TLS · WAF · Keycloak · eventos · Postgres/NATS con TLS)
-        run: ./scripts/smoke-test.sh
+        run: |
+          mkdir -p shots
+          ./scripts/smoke-test.sh | tee shots/term-smoke.txt
+      - name: Evidencias de terminal (contenedores, TLS, WAF)
+        if: always()
+        run: |
+          mkdir -p shots
+          docker compose ps --format "table {{.Service}}\t{{.Image}}\t{{.Status}}" > shots/term-ps.txt
+          docker compose exec -T postgres psql -U agro -d agromarket -c "select pid, ssl, version, cipher from pg_stat_ssl where ssl" > shots/term-pg.txt
+          curl -s http://localhost:8222/varz | python3 -c "import sys,json; d=json.load(sys.stdin); print('server_name   :', d['server_name']); print('version       :', d['version']); print('tls_required  :', d['tls_required']); print('tls_verify    :', d.get('tls_verify')); print('connections   :', d['connections'])" > shots/term-nats.txt
+          curl -sk -o /dev/null -w "%{http_code}\n" "https://localhost:8443/api/catalog/products?q=1%27%20OR%20%271%27%3D%271" > /dev/null
+          docker compose logs --no-color gateway | grep -o 'ModSecurity: Access denied.*\[msg "[^"]*"\]' | sed 's/\[file[^]]*\]//g; s/\[line[^]]*\]//g' | tail -4 > shots/term-waf.txt || true
       - name: Capturas de pantalla (Playwright)
         run: |
           pip install playwright==1.56.0
